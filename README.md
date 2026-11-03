@@ -66,7 +66,9 @@ plugin was last exercised end to end on **0.2.1-rc.5** (2026-11-03): a
 `POST /api/team-progress/rpc` with `{"method":"state"}` answered `200` with a live
 payload. No minimum version is declared.
 
-- The client half is declared for the `web` platform (`dsh.client.platform`).
+- The client half is declared for the `web` platform (`dsh.client.platform`). It is
+  browser-plane code, so importing `dsh-team-progress/client` in Node fails with
+  `window is not defined` — that is the plane, not a defect.
 - Only `webServer` is a hard injection. `agents`, `agentTeams`, `sessionProjections`,
   `goals`, `sessionQuery` and `uiWorkspace` are resolved lazily, so a profile with one
   of those bundles disabled still loads the panel and reports the source.
@@ -91,17 +93,24 @@ session, so it is left to the profile owner.
 
 To enable it, three steps.
 
-**1. Make the package resolvable to the profile.** A profile resolves plugin packages
-from its own `package.json`, so add this checkout as a `link:` dependency and run the
-profile's install (the profile directory ships a `pnpm-workspace.yaml`):
+**1. Clone, then make the package resolvable to the profile.** A profile resolves
+plugin packages from its own `package.json`, so add the checkout as a `link:`
+dependency and run the profile's install (the profile directory ships a
+`pnpm-workspace.yaml`):
 
 ```bash
+git clone https://github.com/ucfjoe/dsh-team-progress.git ~/dsh-team-progress
+
 PROFILE=~/.dsh/profiles/desktop          # the profile you run
 # in "$PROFILE/package.json":
-#   "dependencies": { …, "dsh-team-progress": "link:/abs/path/to/dsh-team-progress" }
+#   "dependencies": { …, "dsh-team-progress": "link:$HOME/dsh-team-progress" }
 cd "$PROFILE" && pnpm install
 ls -l node_modules/dsh-team-progress     # expect a symlink to the checkout
 ```
+
+This step was run from a fresh clone on pnpm 11.22.0 / Node v26.7.0: the symlink
+appears, `import('dsh-team-progress')` resolves the host half (`apply`, `inject`,
+`name`), and `npm test` passes inside the clone.
 
 **2. Add the row to the profile's `cordis.patch.yml`.**
 
