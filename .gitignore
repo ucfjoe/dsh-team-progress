@@ -1,0 +1,10 @@
+# dependencies
+node_modules/
+
+# local backups and editor/OS noise
+*.bak-*
+*.bak
+.DS_Store
+
+# logs
+*.log

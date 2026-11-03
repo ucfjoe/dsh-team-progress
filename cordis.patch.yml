@@ -1,0 +1,29 @@
+# dsh-team-progress bundle patch.
+#
+# One row, no config. The host half resolves every source it needs at read time
+# (`webServer` is the only hard injection), so nothing here is profile-specific.
+#
+# The client half is declared by the `dsh.client` field in package.json and
+# registers ONE slot at mount: `conversation.view` (id `team-progress`, order 30),
+# a "Team progress" tab scoped to the session it was opened in.
+#
+# THIS FILE DOES NOT ENABLE THE PLUGIN. It is the bundle's own patch, applied only
+# once the bundle is enabled somewhere. Enabling is a profile change that affects
+# every session, so it is left to the owner. The row to add to a profile's
+# `cordis.patch.yml` is:
+#
+#   - id: team-progress
+#     name: 'dsh-team-progress'
+#     config:
+#       # Optional. Markdown files you keep a defect table in. Absolute paths,
+#       # `~` expanded, empty entries ignored. Default: none.
+#       defectLogs:
+#         - ~/repos/your-project/docs/defects.md
+#
+# `defectLogs` is read from config ONLY — never from the HTTP request, so the
+# endpoint cannot be turned into an arbitrary-file reader. Omit it (or set `[]`)
+# and the defects view honestly reports
+# `unavailable: no defect-log paths are configured`.
+- insert:
+    - id: team-progress
+      name: 'dsh-team-progress'

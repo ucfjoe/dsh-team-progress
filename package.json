@@ -1,0 +1,49 @@
+{
+  "name": "dsh-team-progress",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Team Progress — an honest, interactive readout of the team's live work: who is on what, what is tracked, and how far the goal has moved. Four views plus the actions a Lead actually takes, every number a count of durable state.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "agent-team",
+    "observability",
+    "team-progress"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ucfjoe/dsh-team-progress.git"
+  },
+  "homepage": "https://github.com/ucfjoe/dsh-team-progress#readme",
+  "bugs": {
+    "url": "https://github.com/ucfjoe/dsh-team-progress/issues"
+  },
+  "author": "Yousef Abdelhamid",
+  "license": "MIT",
+  "scripts": {
+    "test": "node test/verify.mjs && node test/verify-host.mjs"
+  }
+}
