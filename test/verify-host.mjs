@@ -1236,6 +1236,38 @@ console.log('\nR. action surface — off by default, authority and CAS preserved
   check(refused.payload && refused.payload.code === 'TEAM_PROGRESS_ACTIONS_DISABLED', 'the refusal names the switch')
   check(off.calls.mutations.length === 0, 'a disabled action reaches no domain method')
 
+  // A narrower, independent gate. `actionPolicy: 'read-write'` keeps the board
+  // actions and refuses the two that outlive the click. It withholds only when the
+  // profile spells it out, so a profile written before the key existed is unchanged.
+  const pw = makeWorld()
+  pw.addLead({ session: session('session-pw', 1761000000000), tasks: SIX_TASKS, members: ROSTER })
+  const pwRpc = boot(pw, { defectLogs: [], allowMutations: true, actionPolicy: 'read-write' }).rpc
+  const pwAct = (payload) => pwRpc('act', JSON.stringify({ method: 'act', args: payload }))
+  const pwState = await pwRpc('state')
+  check(
+    pwState.payload.actions && pwState.payload.actions.policy === 'read-write',
+    'the payload names the policy in force (' + (pwState.payload.actions && pwState.payload.actions.policy) + ')',
+  )
+  const withheldSpawn = await pwAct({ action: 'spawn', leadId: 'session-pw', name: 'release-auditor', prompt: 'audit the notes' })
+  check(withheldSpawn.status === 403, 'spawn is 403 under read-write (got ' + withheldSpawn.status + ')')
+  check(
+    withheldSpawn.payload && withheldSpawn.payload.code === 'TEAM_PROGRESS_ACTION_WITHHELD',
+    'the refusal names the policy, not the on/off switch (' + (withheldSpawn.payload && withheldSpawn.payload.code) + ')',
+  )
+  const withheldCap = await pwAct({ action: 'member-limit', leadId: 'session-pw', value: 12 })
+  check(withheldCap.status === 403, 'member-limit is 403 under read-write (got ' + withheldCap.status + ')')
+  check(pw.calls.mutations.length === 0, 'a withheld action reaches no domain method')
+  const allowedTask = await pwAct({ action: 'task', op: 'reassign', leadId: 'session-pw', taskId: 'task-5', expectedRevision: 1, owner: 'alpha', notify: false })
+  check(allowedTask.status === 200, 'a board action still runs under read-write (got ' + allowedTask.status + ')')
+
+  const dp = makeWorld()
+  dp.addLead({ session: session('session-dp', 1761000000000), tasks: SIX_TASKS, members: ROSTER })
+  const dpState = await boot(dp, { defectLogs: [], allowMutations: true }).rpc('state')
+  check(
+    dpState.payload.actions && dpState.payload.actions.policy === 'all',
+    'an absent policy resolves to all, so an existing profile is unchanged (' + (dpState.payload.actions && dpState.payload.actions.policy) + ')',
+  )
+
   // On when configured — and still only through ctx.agentTeams, as the Lead.
   const on = makeWorld()
   on.addLead({ session: session('session-a', 1761000000000), tasks: SIX_TASKS, members: ROSTER })

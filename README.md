@@ -138,6 +138,7 @@ Every key is optional; the defaults below are the ones `lib/index.js` applies.
 |---|---|---|
 | `defectLogs` | `[]` | Paths to markdown defect logs, absolute or `~/…`. Empty is the shipped default and makes the defects view report `unavailable: no defect-log paths are configured`. Read from config only, never from the request body. |
 | `allowMutations` | `false` | Enables the `act` method. Off means `act` answers `403 TEAM_PROGRESS_ACTIONS_DISABLED`; every view keeps working. |
+| `actionPolicy` | `'all'` | Narrows the actions reachable once `allowMutations` is on. `'read-write'` withholds the two that outlive the click — `spawn` (creates an agent) and `member-limit` (rewrites a config file on disk) — answering `403 TEAM_PROGRESS_ACTION_WITHHELD` and reaching no domain method. Every board action still runs. An absent or unrecognised value resolves to `'all'`, so an existing profile is unchanged; the payload's `actions.policy` always names the value in force. |
 | `spawnFreshProvider` | `'spawn'` | Provider name passed to `spawnTeammate` for a `fresh`-context spawn. |
 | `spawnForkProvider` | `'fork'` | Provider name passed to `spawnTeammate` for a `fork`-context spawn. |
 | `aliasFile` | `~/.dsh/team-progress/aliases.json` | JSON store for the panel-owned display alias, one-line purpose and hidden flag per member, keyed `leadId\|memberId`. |
@@ -182,6 +183,12 @@ interrupt a running agent, spawn a teammate, broadcast to the whole team.
   domain method. The read views, the counts and the read path keep working unchanged.
 - Turn it on deliberately, on a single-user machine, and treat the route as a local
   control socket rather than an authenticated API.
+- `actionPolicy: 'read-write'` narrows it further without turning it off: `spawn` and
+  `member-limit` answer **`403 TEAM_PROGRESS_ACTION_WITHHELD`** while every board action
+  keeps working. Those two are the ones that outlive the click — one creates a live
+  agent with model budget attached, the other rewrites a config file on disk.
+  Withholding is opt-in, so the value an existing profile already means (`'all'`) stays
+  the default rather than being re-interpreted under it.
 
 Paths in `defectLogs` come from config only, never from the request, so the route
 cannot be turned into an arbitrary-file reader. The body is capped at 64 KiB.
@@ -216,7 +223,7 @@ a method that is not registered (including `constructor`, `__proto__`, `toString
   "goal": { "state": "ok", "goals": [ /* roundsStarted, maxGoalRounds, phase */ ] },
   "waitingOnYou": { "state": "ok", "total": 3, "stalled": 1, "unassigned": 2, "idle": 0 },
   "attention": [ { "kind": "stalled", "label": "task-5", "detail": "owner beta is inactive" } ],
-  "actions": { "enabled": false },
+  "actions": { "enabled": false, "policy": "all" },
   "degraded": { "any": false, "reasons": [] }
 }
 ```
