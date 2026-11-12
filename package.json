@@ -1,6 +1,6 @@
 {
   "name": "dsh-team-progress",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "Team Progress — an honest, interactive readout of the team's live work: who is on what, what is tracked, and how far the goal has moved. Four views plus the actions a Lead actually takes, every number a count of durable state.",
   "type": "module",
