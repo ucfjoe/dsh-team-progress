@@ -184,10 +184,52 @@ check(
   'the action carries provider, model and effort (' + JSON.stringify(acts[0]) + ')',
 )
 
-// Spawn carries the same kind of selection.
-const spawnNodes = render({ snapshot: { ...snapshot, roster: { ...snapshot.roster, members: snapshot.roster.members } }, models, onAct: (payload) => acts.push(payload) })
-const spawnToggle = spawnNodes.find((n) => n.props && n.props['data-spawn-toggle'] === '1')
+// The spawn form carries its own picker, and the chosen triple rides the spawn.
+acts.length = 0
+const openNodes = render({
+  snapshot,
+  models,
+  onAct: (payload) => acts.push(payload),
+})
+const spawnToggle = openNodes.find((n) => n.props && n.props['data-spawn-toggle'] === '1')
 check(spawnToggle !== undefined, 'the members section still offers a new-agent control')
+
+// Opening the composer is a local UI toggle; click it, then render again.
+if (spawnToggle && typeof spawnToggle.props.onClick === 'function') {
+  spawnToggle.props.onClick({ stopPropagation() {} })
+}
+const withForm = render({ snapshot, models, onAct: (payload) => acts.push(payload) })
+const spawnPicker = withForm.find((n) => n.props && n.props['data-model-picker'] === 'spawn')
+check(spawnPicker !== undefined, 'the spawn composer offers a model picker once open')
+if (spawnPicker && typeof spawnPicker.props.onChange === 'function') {
+  spawnPicker.props.onChange({ target: { value: 'hf-litellm\u0000gpt-6.1-sol\u0000' }, stopPropagation() {} })
+}
+const chosen = render({ snapshot, models, onAct: (payload) => acts.push(payload) })
+  .find((n) => n.props && n.props['data-spawn-model'] === '1')
+check(chosen !== undefined, 'the composer states the model it will use (' + JSON.stringify(chosen && chosen.children) + ')')
+
+// The auto-assign control on the board carries the same selection. A board
+// fixture is required because auto-assign lives on the chalkboard.
+acts.length = 0
+const boardSnapshot = {
+  ...snapshot,
+  teams: [{
+    leadId: 'session-lead',
+    label: 'demo',
+    summary: snapshot.summary,
+    roster: snapshot.roster,
+    aliases: {},
+    lanes: { ready: [{ id: 'task-2', revision: 1, subject: 'unowned work', owner: null, status: 'pending' }], inProgress: [], done: [], blocked: [] },
+    laneCounts: { ready: 1, inProgress: 0, done: 0, blocked: 0 },
+    goal: { state: 'none', goals: [] },
+    waitingOnYou: { state: 'ok', total: 0, stalled: 0, unassigned: 0, idle: null },
+    lineage: { state: 'unavailable', forks: null, subagents: null, other: null, branches: null, rows: [], truncated: false, rowState: 'unavailable' },
+    dormant: false,
+  }],
+}
+const boardNodes = render({ snapshot: boardSnapshot, models, onAct: (payload) => acts.push(payload) })
+const assignPicker = boardNodes.find((n) => n.props && n.props['data-model-picker'] === 'auto-assign')
+check(assignPicker !== undefined, 'the board offers the same model control for auto-assign')
 
 console.log(failures === 0 ? '\nPASS: the panel shows and changes per-agent models' : '\n' + String(failures) + ' check(s) failed')
 process.exit(failures === 0 ? 0 : 1)

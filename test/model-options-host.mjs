@@ -121,7 +121,15 @@ assert.equal(updates.length, 0, 'a failed selection blocks the assignment')
 
 failSelection = false
 spawns.length = 0
+idleSelects.length = 0
+updates.length = 0
+// A board with no idle teammate forces the spawn branch, so the check below
+// cannot pass on an empty list: exactly one activation must carry the options.
+tasks.length = 0
+tasks.push({ id: 'task-2', revision: 1, subject: 'unowned work', description: 'd', status: 'pending', blockedBy: [], writeScopes: [], ready: true })
+descendants.length = 0
 await act({ action: 'auto-assign', leadId: 'session-lead', spawn: true, maxSpawns: 1, provider: 'hf-litellm', model: 'gpt-6.1-sol' })
-assert.ok(spawns.length === 0 || spawns.every(spec => JSON.stringify(spec.agentOptions) === JSON.stringify(selection)), 'auto-assign forwards agentOptions to every new agent')
+assert.equal(spawns.length, 1, 'auto-assign created exactly one agent (got ' + spawns.length + ')')
+assert.deepEqual(spawns[0].agentOptions, selection, 'the spawned agent carries the chosen model')
 
 console.log('PASS: Spawn and assignment apply the chosen model')
