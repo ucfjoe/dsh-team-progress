@@ -228,15 +228,14 @@ function makeWorld(options = {}) {
       if (name === 'agents') {
         if (options.noAgents) return undefined
         return {
-          roots: () => {
-            calls.roots += 1
-            return [...agents.values()]
-          },
           get: (id) => {
             calls.get.push(id)
             return agents.get(id)
           },
-          list: () => [...agents.values()],
+          list: () => {
+            calls.roots += 1
+            return [...agents.values()]
+          },
         }
       }
       if (name === 'sessionProjections') {
@@ -278,35 +277,6 @@ function makeWorld(options = {}) {
       if (name === 'agentTeams') {
         if (options.noTeams) return undefined
         return {
-          tryMembership: (agent) => {
-            calls.tryMembership.push(agent && agent.id)
-            if (options.notALead) return { root: agent, id: agent.id, role: 'teammate', name: 'alpha' }
-            if (options.noMembership) return undefined
-            return { root: agent, id: agent.id, role: 'lead', name: 'lead' }
-          },
-          // The three domain mutations the panel is allowed to reach. They are
-          // recorded, never performed: this harness must not touch a real team.
-          //
-          // `AbortSignal.any` is the real domain's own first move
-          // (agent-team/src/mailbox.ts: `AbortSignal.any([request.signal,
-          // lifecycle.signal])`), so calling it here makes this fake refuse
-          // exactly what the real service refuses. v0.4.0 shipped a `sendMessage`
-          // request with no `signal`, so every Wake/Nudge answered HTTP 500
-          // (`ERR_INVALID_ARG_TYPE: signals[0] is not of type AbortSignal`).
-          // A permissive stub is why this suite stayed green.
-          sendMessage: (caller, request) => {
-            AbortSignal.any([request.signal])
-            calls.mutations.push({ op: 'sendMessage', caller: caller && caller.id, request })
-            return Promise.resolve({ status: 'accepted' })
-          },
-          interrupt: (caller, target) => {
-            calls.mutations.push({ op: 'interrupt', caller: caller && caller.id, target })
-            return { previousStatus: 'running' }
-          },
-          spawnTeammate: (caller, request) => {
-            calls.mutations.push({ op: 'spawnTeammate', caller: caller && caller.id, request })
-            return Promise.resolve({ member: { name: request && request.name, role: 'teammate', status: 'provisioning' } })
-          },
           createTask: (caller, request) => {
             calls.mutations.push({ op: 'createTask', caller: caller && caller.id, request })
             return Promise.resolve({ id: 'task-90', revision: 1, status: 'pending', subject: request && request.subject })
@@ -315,15 +285,71 @@ function makeWorld(options = {}) {
             calls.mutations.push({ op: 'updateTask', caller: caller && caller.id, request })
             return Promise.resolve({ id: request.taskId, revision: request.expectedRevision + 1, status: 'completed' })
           },
-          listMembers: (agent) => {
-            calls.listMembers.push(agent && agent.id)
-            if (options.throwMembers) throw new Error('members exploded')
-            return rosters.get(agent.id) || [LEAD_ROW]
-          },
           listTasks: (agent) => {
             calls.listTasks.push(agent && agent.id)
             if (options.throwTasks) throw new Error('tasks exploded')
             return tasksByLead.get(agent.id) || []
+          },
+        }
+      }
+      if (name === 'subagents') {
+        if (options.noTeams) return undefined
+        return {
+          config: { maxActiveSubagents: 8 },
+          rootOf: (agent) => {
+            calls.tryMembership.push(agent && agent.id)
+            return options.notALead ? { id: 'session-other' } : agent
+          },
+          namesOf: () => ({ self: 'lead' }),
+          listDescendants: async (rootId) => {
+            calls.listMembers.push(rootId)
+            if (options.throwMembers) throw new Error('members exploded')
+            return (rosters.get(rootId) || [LEAD_ROW])
+              .filter(member => member.role !== 'lead')
+              .map(member => ({
+                kind: 'child',
+                id: member.id,
+                parentId: rootId,
+                depth: 1,
+                path: member.name,
+                label: member.description,
+                mode: 'continuable',
+                activity: member.status,
+                hasChildren: false,
+              }))
+          },
+          resolveName: async (_caller, name, signal) => {
+            AbortSignal.any([signal])
+            for (const roster of rosters.values()) {
+              const found = roster.find(member => member.name === name || member.id === name)
+              if (found !== undefined) return found.id
+            }
+            return name
+          },
+          sendMessage: async (caller, targetId, content, options) => {
+            AbortSignal.any([options.signal])
+            let target = targetId
+            for (const roster of rosters.values()) {
+              const found = roster.find(member => member.id === targetId)
+              if (found !== undefined) target = found.name
+            }
+            const request = { target, content, signal: options.signal }
+            calls.mutations.push({ op: 'sendMessage', caller: caller && caller.id, request })
+            return 'message-1'
+          },
+          interrupt: (target, authority) => {
+            calls.mutations.push({ op: 'interrupt', caller: authority && authority.agent && authority.agent.id, target })
+          },
+          startActivation: async (spec) => {
+            const request = {
+              name: spec.name,
+              description: spec.label,
+              prompt: spec.prompt,
+              provider: spec.provider,
+              signal: spec.signal,
+            }
+            calls.mutations.push({ op: 'spawnTeammate', caller: spec.parent && spec.parent.id, request })
+            return { childId: 'session-new', name: spec.name }
           },
         }
       }
@@ -526,7 +552,7 @@ check(
 
 // ---- the read path: leads only, never member ids ----------------------------
 console.log('\nA2. read path — one membership call per lead')
-check(A.calls.roots === 1, 'agents.roots() is called once (got ' + A.calls.roots + ')')
+check(A.calls.roots === 2, 'agents.list() is called for the roster and lineage (got ' + A.calls.roots + ')')
 check(A.calls.tryMembership.length === 1, 'tryMembership is called once for the one lead (got ' + A.calls.tryMembership.length + ')')
 check(
   A.calls.tryMembership[0] === 'session-a',
@@ -1296,8 +1322,8 @@ console.log('\nR. action surface — off by default, authority and CAS preserved
     'wake passes an AbortSignal: the domain requires one and throws without it',
   )
   check(
-    wake.payload.delivery === 'accepted',
-    'wake reports the delivery the domain returned (got ' + JSON.stringify(wake.payload.delivery) + ')',
+    wake.payload.delivery === null,
+    'wake reports dispatch without inventing a delivery status (got ' + JSON.stringify(wake.payload.delivery) + ')',
   )
 
   const custom = await onAct({ action: 'wake', leadId: 'session-a', target: 'beta', message: 'ping' })
@@ -1371,7 +1397,7 @@ console.log('\nR. action surface — off by default, authority and CAS preserved
   check(spawned.status === 200, 'spawn succeeds (' + spawned.status + ')')
   const spawnCall = on.calls.mutations.filter((call) => call.op === 'spawnTeammate').pop()
   check(spawnCall && spawnCall.request.provider === 'spawn', 'spawn defaults to the fresh provider the Team tool uses')
-  check(spawnCall && spawnCall.request.context === 'fresh', 'spawn defaults to a fresh context')
+  check(spawned.payload.context === 'fresh', 'spawn defaults to a fresh context')
   check(
     spawnCall && Array.isArray(spawnCall.request.prompt) && spawnCall.request.prompt.length === 2,
     'spawn sends the naming reminder plus the brief',
@@ -1384,7 +1410,7 @@ console.log('\nR. action surface — off by default, authority and CAS preserved
   const assigned = await onAct({ action: 'task', op: 'reassign', leadId: 'session-a', taskId: 'task-5', expectedRevision: 1, owner: 'alpha' })
   check(assigned.status === 200, 'reassign is an allowed task op (' + assigned.status + ')')
   const assignCall = on.calls.mutations.filter((call) => call.op === 'updateTask').pop()
-  check(assignCall && assignCall.request.action === 'reassign' && assignCall.request.owner === 'alpha', 'reassign names the owner it is assigning')
+  check(assignCall && assignCall.request.action === 'reassign' && assignCall.request.owner === 'session-b', 'reassign resolves the owner name to a Session id')
   on.calls.mutations.length = 0
   const waking = await onAct({ action: 'task', op: 'reassign', leadId: 'session-a', taskId: 'task-5', expectedRevision: 1, owner: 'alpha' })
   const wakeCalls = on.calls.mutations.filter((call) => call.op === 'sendMessage')
@@ -1398,8 +1424,8 @@ console.log('\nR. action surface — off by default, authority and CAS preserved
     'the wake carries the caller signal the domain requires',
   )
   check(
-    waking.payload.notified && waking.payload.notified.delivery === 'accepted',
-    'the receipt reports the wake (' + JSON.stringify(waking.payload.notified) + ')',
+    waking.payload.notified && waking.payload.notified.delivery === null,
+    'the receipt reports dispatch without inventing a delivery status (' + JSON.stringify(waking.payload.notified) + ')',
   )
   on.calls.mutations.length = 0
   await onAct({ action: 'task', op: 'reassign', leadId: 'session-a', taskId: 'task-5', expectedRevision: 1, owner: 'alpha', notify: false })
@@ -1410,15 +1436,15 @@ console.log('\nR. action surface — off by default, authority and CAS preserved
 
   const unassigned = await onAct({ action: 'task', op: 'reassign', leadId: 'session-a', taskId: 'task-5', expectedRevision: 1 })
   const unassignCall = on.calls.mutations.filter((call) => call.op === 'updateTask').pop()
-  check(unassigned.status === 200 && unassignCall.request.owner === '', 'an absent owner unassigns rather than failing')
+  check(unassigned.status === 200 && !Object.hasOwn(unassignCall.request, 'owner'), 'an absent owner unassigns rather than failing')
 
   // The member cap: written into the patch layer the profile watcher re-applies,
   // with a backup beside it, and refused outside a sane range.
-  fs.writeFileSync(TMP_PATCH, '- id: agent-team\n  config:\n    maxMembers: 8\n')
+  fs.writeFileSync(TMP_PATCH, '- id: subagent\n  config:\n    maxActiveSubagents: 8\n')
   const raised = await onAct({ action: 'member-limit', leadId: 'session-a', value: 12 })
   check(raised.status === 200 && raised.payload.value === 12, 'the cap can be set from the panel (' + raised.status + ')')
   const patched = fs.readFileSync(TMP_PATCH, 'utf8')
-  check(/maxMembers: 12/.test(patched), 'the row it wrote carries the new value (' + patched.replace(/\n/g, ' ') + ')')
+  check(/maxActiveSubagents: 12/.test(patched), 'the row it wrote carries the new value (' + patched.replace(/\n/g, ' ') + ')')
   check(
     fs.readdirSync('/tmp').some((name) => name.startsWith('dsh-team-progress-test-patch.yml.bak-team-progress-')),
     'the previous patch layer is backed up before the write',
@@ -1517,16 +1543,16 @@ console.log('\nR. action surface — off by default, authority and CAS preserved
     'every broadcast send carries the caller signal the domain requires',
   )
   check(
-    broadcast.payload.sent === 2 && broadcast.payload.accepted === 2 && broadcast.payload.failed.length === 0,
-    'broadcast reports each delivery (' + JSON.stringify(broadcast.payload.sent) + ')',
+    broadcast.payload.sent === 2 && broadcast.payload.unconfirmed === 2 && broadcast.payload.failed.length === 0,
+    'broadcast reports unconfirmed dispatch without calling it a failure (' + JSON.stringify(broadcast.payload.sent) + ')',
   )
   const broadcastEmpty = await onAct({ action: 'broadcast', leadId: 'session-a', message: '' })
   check(broadcastEmpty.status === 400, 'an empty broadcast is refused (' + broadcastEmpty.status + ')')
 
   const stop = await onAct({ action: 'interrupt', leadId: 'session-a', target: 'alpha' })
-  check(stop.status === 200 && stop.payload.previousStatus === 'running', 'interrupt reports the status it saw (got ' + JSON.stringify(stop.payload && stop.payload.previousStatus) + ')')
+  check(stop.status === 200 && stop.payload.previousStatus === null, 'interrupt reports no fabricated previous status (got ' + JSON.stringify(stop.payload && stop.payload.previousStatus) + ')')
   const stopCall = on.calls.mutations.find((call) => call.op === 'interrupt')
-  check(stopCall && stopCall.target === 'alpha', 'interrupt passes the target name through')
+  check(stopCall && stopCall.target === 'session-b', 'interrupt resolves the target name to its Session id')
 
   const done = await onAct({ action: 'task', op: 'complete', leadId: 'session-a', taskId: 'task-5', expectedRevision: 1 })
   check(done.status === 200 && done.payload.ok === true, 'task complete succeeds (got ' + done.status + ')')
