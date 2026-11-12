@@ -44,6 +44,6 @@
   "author": "Yousef Abdelhamid",
   "license": "MIT",
   "scripts": {
-    "test": "node test/verify.mjs && node test/verify-host.mjs && node test/read-migration.mjs && node test/action-migration.mjs && node test/live-model-selection.mjs && node test/model-rpc.mjs && node test/model-options-host.mjs && node test/model-controls-client.mjs && node test/model-honesty.mjs"
+    "test": "node test/verify.mjs && node test/verify-host.mjs && node test/read-migration.mjs && node test/action-migration.mjs && node test/live-model-selection.mjs && node test/model-rpc.mjs && node test/model-options-host.mjs && node test/model-controls-client.mjs && node test/model-honesty.mjs && node test/open-session.mjs"
   }
 }
