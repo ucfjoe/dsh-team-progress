@@ -484,7 +484,22 @@ if (happyTree) {
     !rows.some((n) => n.props['data-member'] === 'gamma' && n.props['data-claim'] === '0'),
     'no member row reports "0" as a claim',
   )
-  check(!/model/.test(text), 'renders no model column')
+  // REVERSED DECISION, 2026-11-12. 0.6.0 asserted no model column, because the
+  // panel could not change a model and a read-only column would have been a fact
+  // the reader could not act on. Both halves changed: the panel now names the model
+  // in force per member AND switches it, so the column is the control. With no
+  // model state in the fixture it must still say so rather than invent an id.
+  check(
+    rows.every((n) => {
+      const cell = propIn(n, 'data-model-for')
+      return typeof cell === 'string'
+    }),
+    'every member row carries a model cell',
+  )
+  check(
+    rows.every((n) => textIn(n).includes('model unavailable')),
+    'with no model state read, the cell says so instead of naming a model',
+  )
 
   // --- view 2: defects ------------------------------------------------------
   const defectsAt = indexOfNode(happyTree, (props) => props['data-defects'] === '1')
